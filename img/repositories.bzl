@@ -7,7 +7,6 @@ def _img_prebuilt_tool_from_lockfile_impl(rctx):
     lockfile_content = rctx.read(rctx.attr.lockfile)
     lockfile_data = json.decode(lockfile_content)
 
-    # Find the tool entry for our target platform
     target_tool = None
     for tool in lockfile_data:
         if tool["os"] == rctx.attr.os and tool["cpu"] == rctx.attr.cpu:
@@ -15,9 +14,20 @@ def _img_prebuilt_tool_from_lockfile_impl(rctx):
             break
 
     if not target_tool:
-        fail("No tool found in lockfile for platform %s_%s" % (rctx.attr.os, rctx.attr.cpu))
+        # No prebuilt binary for this platform in the lockfile.
+        # Create a stub that gives a clear error at build time instead of
+        # crashing during repository fetch.
+        rctx.file("img.exe", content = """#!/bin/sh
+echo "ERROR: No prebuilt img tool for platform {os}_{cpu}." >&2
+echo "Provide a locally-built binary via img_register_prebuilt_toolchains(host_tool=...)" >&2
+exit 1
+""".format(os = rctx.attr.os, cpu = rctx.attr.cpu), executable = True)
+        rctx.file(
+            "BUILD.bazel",
+            content = """exports_files(["img.exe"])""",
+        )
+        return
 
-    # Download the tool using the same logic as prebuilt_img_tool_repo
     extension = "exe" if target_tool["os"] == "windows" else ""
     dot = "." if len(extension) > 0 else ""
     url_templates = target_tool.get("url_templates", ["https://github.com/bazel-contrib/rules_img/releases/download/{version}/img_{os}_{cpu}{dot}{extension}"])
@@ -51,9 +61,28 @@ _img_prebuilt_tool_from_lockfile = repository_rule(
     },
 )
 
+def _host_tool_repo_impl(rctx):
+    """Repository rule that symlinks a user-provided local binary."""
+    rctx.symlink(rctx.attr.binary, rctx.attr.filename)
+    rctx.file(
+        "BUILD.bazel",
+        content = """exports_files(["%s"])""" % rctx.attr.filename,
+    )
+
+_host_tool_repo = repository_rule(
+    implementation = _host_tool_repo_impl,
+    attrs = {
+        "binary": attr.label(mandatory = True, allow_single_file = True),
+        "filename": attr.string(default = "img.exe"),
+    },
+)
+
 def img_register_prebuilt_toolchains(
         name = "img_toolchain",
         lockfile = Label("@rules_img//:prebuilt_lockfile.json"),
+        host_tool = None,
+        host_os = None,
+        host_cpu = None,
         platforms = [
             ("linux", "amd64"),
             ("linux", "arm64"),
@@ -74,10 +103,11 @@ def img_register_prebuilt_toolchains(
         # Use defaults
         img_register_prebuilt_toolchains()
 
-        # Or specify custom platforms/lockfile
+        # Or provide a locally-built binary for the host platform
         img_register_prebuilt_toolchains(
-            lockfile = "@my_repo//:my_lockfile.json",
-            platforms = [("linux", "amd64"), ("darwin", "amd64")]
+            host_tool = "//:img",
+            host_os = "linux",
+            host_cpu = "s390x",
         )
 
         # Then register the toolchains
@@ -86,15 +116,16 @@ def img_register_prebuilt_toolchains(
     Args:
         name: Name of the toolchain collection hub repository (default: "img_toolchain")
         lockfile: Label pointing to the prebuilt lockfile.json (default: "@rules_img//:prebuilt_lockfile.json")
-        platforms: List of (os, cpu) tuples for platforms to support
+        host_tool: Optional label to a locally-built img binary for the host platform
+        host_os: Go OS name for the host_tool (e.g., "linux"). Required if host_tool is set.
+        host_cpu: Go arch name for the host_tool (e.g., "s390x"). Required if host_tool is set.
+        platforms: List of (os, cpu) tuples for platforms to support via prebuilt downloads
     """
 
-    # Create individual tool repositories for each requested platform
     tools = {}
     for (os, cpu) in platforms:
         repo_name = "%s_%s_%s" % (name, os, cpu)
 
-        # Create repository that reads lockfile and downloads tool for this platform
         _img_prebuilt_tool_from_lockfile(
             name = repo_name,
             lockfile = lockfile,
@@ -102,11 +133,21 @@ def img_register_prebuilt_toolchains(
             cpu = cpu,
         )
 
-        # Track this tool for the hub repository
         platform_key = "%s_%s" % (os, cpu)
         tools[platform_key] = "@%s//:img.exe" % repo_name
 
-    # Create the hub repository with all toolchain definitions
+    if host_tool:
+        if not host_os or not host_cpu:
+            fail("host_os and host_cpu are required when host_tool is set")
+        repo_name = "%s_%s_%s_host" % (name, host_os, host_cpu)
+        _host_tool_repo(
+            name = repo_name,
+            binary = host_tool,
+            filename = "img.exe",
+        )
+        platform_key = "%s_%s" % (host_os, host_cpu)
+        tools[platform_key] = "@%s//:img.exe" % repo_name
+
     prebuilt_collection_hub_repo(
         name = name,
         tools = tools,
@@ -117,7 +158,6 @@ def _pull_tool_prebuilt_tool_from_lockfile_impl(rctx):
     lockfile_content = rctx.read(rctx.attr.lockfile)
     lockfile_data = json.decode(lockfile_content)
 
-    # Find the tool entry for our target platform
     target_tool = None
     for tool in lockfile_data:
         if tool["os"] == rctx.attr.os and tool["cpu"] == rctx.attr.cpu:
@@ -125,9 +165,17 @@ def _pull_tool_prebuilt_tool_from_lockfile_impl(rctx):
             break
 
     if not target_tool:
-        fail("No pull_tool found in lockfile for platform %s_%s" % (rctx.attr.os, rctx.attr.cpu))
+        rctx.file("pull_tool.exe", content = """#!/bin/sh
+echo "ERROR: No prebuilt pull_tool for platform {os}_{cpu}." >&2
+echo "Provide a locally-built binary via pull_tool_register_prebuilt_repositories(host_tool=...)" >&2
+exit 1
+""".format(os = rctx.attr.os, cpu = rctx.attr.cpu), executable = True)
+        rctx.file(
+            "BUILD.bazel",
+            content = """exports_files(["pull_tool.exe"])""",
+        )
+        return
 
-    # Download the tool using pull_tool URL templates
     extension = "exe" if target_tool["os"] == "windows" else ""
     dot = "." if len(extension) > 0 else ""
     url_templates = target_tool.get("url_templates", ["https://github.com/bazel-contrib/rules_img/releases/download/{version}/pull_tool_{os}_{cpu}{dot}{extension}"])
@@ -164,6 +212,9 @@ _pull_tool_prebuilt_tool_from_lockfile = repository_rule(
 def pull_tool_register_prebuilt_repositories(
         name = "pull_hub_repo",
         lockfile = Label("@rules_img//:pull_tool_lockfile.json"),
+        host_tool = None,
+        host_os = None,
+        host_cpu = None,
         platforms = [
             ("linux", "amd64"),
             ("linux", "arm64"),
@@ -184,24 +235,26 @@ def pull_tool_register_prebuilt_repositories(
         # Use defaults
         pull_tool_register_prebuilt_repositories()
 
-        # Or specify custom platforms/lockfile
+        # Or provide a locally-built binary for the host platform
         pull_tool_register_prebuilt_repositories(
-            lockfile = "@my_repo//:my_pull_tool_lockfile.json",
-            platforms = [("linux", "amd64"), ("darwin", "amd64")]
+            host_tool = "//:pull_tool",
+            host_os = "linux",
+            host_cpu = "s390x",
         )
 
     Args:
         name: Name of the pull_tool collection hub repository (default: "pull_hub_repo")
         lockfile: Label pointing to the pull_tool_lockfile.json (default: "@rules_img//:pull_tool_lockfile.json")
-        platforms: List of (os, cpu) tuples for platforms to support
+        host_tool: Optional label to a locally-built pull_tool binary for the host platform
+        host_os: Go OS name for the host_tool (e.g., "linux"). Required if host_tool is set.
+        host_cpu: Go arch name for the host_tool (e.g., "s390x"). Required if host_tool is set.
+        platforms: List of (os, cpu) tuples for platforms to support via prebuilt downloads
     """
 
-    # Create individual tool repositories for each requested platform
     tools = {}
     for (os, cpu) in platforms:
         repo_name = "%s_%s_%s" % (name, os, cpu)
 
-        # Create repository that reads lockfile and downloads pull_tool for this platform
         _pull_tool_prebuilt_tool_from_lockfile(
             name = repo_name,
             lockfile = lockfile,
@@ -209,11 +262,21 @@ def pull_tool_register_prebuilt_repositories(
             cpu = cpu,
         )
 
-        # Track this tool for the hub repository
         platform_key = "%s_%s" % (os, cpu)
         tools[platform_key] = "@%s//:pull_tool.exe" % repo_name
 
-    # Create the hub repository without toolchain definitions (just tool references)
+    if host_tool:
+        if not host_os or not host_cpu:
+            fail("host_os and host_cpu are required when host_tool is set")
+        repo_name = "%s_%s_%s_host" % (name, host_os, host_cpu)
+        _host_tool_repo(
+            name = repo_name,
+            binary = host_tool,
+            filename = "pull_tool.exe",
+        )
+        platform_key = "%s_%s" % (host_os, host_cpu)
+        tools[platform_key] = "@%s//:pull_tool.exe" % repo_name
+
     prebuilt_pull_hub_repo(
         name = name,
         tools = tools,

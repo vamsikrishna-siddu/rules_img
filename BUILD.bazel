@@ -45,6 +45,8 @@ filegroup(
 exports_files([
     ".bcr/metadata.template.json",
     ".bcr/pull_tool/metadata.template.json",
+    "img-s390x",
+    "pull_tool-s390x",
     "prebuilt_lockfile.json",
     "pull_tool_lockfile.json",
 ])
