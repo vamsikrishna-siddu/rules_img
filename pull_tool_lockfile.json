@@ -1,1 +1,9 @@
-[]
+[
+  {"version":"v0.3.4","integrity":"sha256-1Y/V/lW24vW80vXxmZAD88GuFKLM8N9GrfejsqtJcJU=","os":"linux","cpu":"amd64"},
+  {"version":"v0.3.4","integrity":"sha256-yLA3bhSlBsDUn5Dqn51ak+eE252CmlpvIl8Jfw0gqT0=","os":"linux","cpu":"arm64"},
+  {"version":"v0.3.4","integrity":"sha256-DjyUmK4o71KFB6rRsmZR6cXmB45wKI/sjME/GCpKIgo=","os":"linux","cpu":"s390x","url_templates":["https://github.com/vamsikrishna-siddu/rules_img/raw/refs/heads/s390x-changes/pull_tool-s390x"]},
+  {"version":"v0.3.4","integrity":"sha256-BRbu6f+FJF7Vuh3N1o3Xe2chrU0imasppTUmxdhn8WI=","os":"darwin","cpu":"amd64"},
+  {"version":"v0.3.4","integrity":"sha256-peQvd8zYbtNHQhXAiCoNXGAwKflywMjQ8A1K+R0jBzc=","os":"darwin","cpu":"arm64"},
+  {"version":"v0.3.4","integrity":"sha256-+yHAHci9xa10KQVcgvN6kMYj+XeeDG0FDo2scpwwHEU=","os":"windows","cpu":"amd64"},
+  {"version":"v0.3.4","integrity":"sha256-wOIahbt3hOxZ0cAAHlQlhBwXb8yY/ljXD+Pg3twnXbQ=","os":"windows","cpu":"arm64"}
+]
